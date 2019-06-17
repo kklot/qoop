@@ -1,0 +1,31 @@
+Package: qoop
+Title: Quantitative overweight and obese projection
+Version: 0.1
+Authors@R: person("Kinh", "Nguyen", email = "kinh.nguyen@imperial.ac.uk", role = c("aut"))
+Description: What the package does (one paragraph).
+Depends: R (>= 3.1.0),
+Imports: 
+    abind (>= 1.4),
+    data.table,
+    fastmatch (>= 1.1),
+    magrittr,
+    methods,
+    mgcv,
+    mvtnorm,
+    RColorBrewer,
+    reshape2,
+    R6,
+    xml2
+LinkingTo: 
+    BH
+License: GPL-3
+Encoding: UTF-8
+LazyData: true
+Suggests: 
+    testthat,
+    knitr,
+    rmarkdown,
+    covr
+VignetteBuilder: knitr
+URL: https://github.com/kklot/qoop
+BugReports: https://github.com/kklot/qoop/issues
