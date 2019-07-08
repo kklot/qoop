@@ -1,0 +1,165 @@
+---
+title: "Basic example"
+author: "VK Nguyen"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    fig_width: 7
+    fig_height: 6
+    fig_caption: true
+    toc: true
+vignette: >
+  %\VignetteIndexEntry{Vignette Title}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  warning = FALSE,
+  comment = "#>"
+)
+library(magrittr)
+devtools::load_all('~/Code/R/kPlot/')
+devtools::load_all('~/GitHub/qoop/')
+MALE <- 1; FEMALE <- 2
+```
+
+## Population inputs: 1971-2015
+
+Initial population
+
+```{r}
+fp <- list()
+N_male_from_1971 <- read.csv(
+  system.file("extdata", "pop_by_age_male_1971_2015.csv", package = "qoop"),
+  header=T, row.names=1) %>% as.matrix
+N_female_from_1971 <- read.csv(
+  system.file("extdata", "pop_by_age_female_1971_2015.csv", package = "qoop"),
+  header=T, row.names=1) %>% as.matrix
+fp$SIM_YEARS <- 1971:2015 %>% length
+
+# Cut at 80+ age
+age_80_ <- which(rownames(N_male_from_1971)==80)
+max_age <- nrow(N_male_from_1971)
+N_female_from_1971[age_80_,] <- N_female_from_1971[age_80_:max_age,] %>% colSums(1)
+N_female_from_1971 <- N_female_from_1971[1:age_80_,]
+N_male_from_1971[age_80_,] <- N_male_from_1971[age_80_:max_age,] %>% colSums(1)
+N_male_from_1971 <- N_male_from_1971[1:age_80_,]
+
+fp$basepop <- cbind(N_male_from_1971[, "X1971"],
+                    N_female_from_1971[, "X1971"]) # starting from 1971, 0:90
+fp$ss$pAG <- fp$basepop %>% nrow
+```
+
+```{r echo=FALSE, fig.cap = "Base population"}
+fp$basepop %>% {
+  barplot(.[, 1], ylim=c(0, 10e+5), ylab="Freq", xlab="Age")
+  barplot(.[, 2], col=AddAlpha(2), add=T)
+  legend("topleft", col=1:2, pch=15, legend=c("male", "female"))
+}
+```
+
+## Target population (for adjusting): 1971-2015
+
+```{r}
+fp$targetpop <- array(NA, c(nrow(N_male_from_1971), 2, # two sexes
+                            ncol(N_male_from_1971))) # endedin 2015
+for (i in 1:fp$SIM_YEARS)
+  fp$targetpop[,,i] <- cbind(N_male_from_1971[,i], N_female_from_1971[,i])  
+```
+
+## Mortality rate: 1981-2064
+
+```{r}
+qx_male_from_1981 <- read.csv(
+  system.file("extdata", "UK_qx_male_1981_2064.csv", package = "qoop"),
+  header=T, row.names=1) %>% `/`(1e5) %>% as.matrix
+qx_female_from_1981 <- read.csv(
+  system.file("extdata", "UK_qx_female_1981_2064.csv", package = "qoop"),
+  header=T, row.names=1) %>% `/`(1e5) %>% as.matrix
+fp$Sx <- array(NA, c(fp$ss$pAG, 2, ncol(qx_male_from_1981))) # ended in 2015
+
+# assume age 91 qx is the same
+for (i in 1:fp$SIM_YEARS)
+  fp$Sx[,,i] <- cbind(qx_male_from_1981[1:fp$ss$pAG,i],
+                      qx_female_from_1981[1:fp$ss$pAG,i])
+fp$Sx %<>% {1-.}
+
+# assume qx 1971--1981 == 1981
+qx1971_1980 <- array(NA, c(nrow(fp$Sx), 2, length(1971:1980)))
+for (i in 1:10) qx1971_1980[,,i] <- fp$Sx[,,1]
+fp$Sx %<>% abind::abind(qx1971_1980)
+
+SEXRATIO <- 105/100 # Compendium - National Population Projections: series PP2
+                    # Release date: 30 March 2016
+```
+
+```{r echo=FALSE, fig.cap = "Mortality"}
+fp$Sx %>% {
+  lineplot(.[, MALE, 1], ylab="Survival prob", xlab="Age")
+  lines(.[, FEMALE, 1], col=2)
+  legend("topright", col=1:2, pch=15, legend=c("male", "female"))
+}
+```
+
+## Obese prevalence UK: 1975-2016
+
+```{r echo=FALSE, fig.width=6, fig.height=5, fig.cap = "Prevalence over year"}
+fp$p <- read.csv(
+  system.file("extdata", "obese_prev_UK.csv", package = "qoop"),
+  stringsAsFactor=F)
+par(mar=c(5,4,1,1))
+fp$p %>% {
+  subset(., sex=="Male") %$% lineplot(year, prev)
+  subset(., sex=="Female") %$% lines(year, prev, col=2)
+  legend("topleft", col=1:2, legend=c('male', 'female'), lwd=2)
+}
+```
+
+```{r echo=FALSE, fig.cap = "Prev by age group and sex"}
+prev_by_agr <- read.csv(
+  system.file("extdata", "prev_obese_by_agegroup_sex.csv", package="qoop"))
+prev_by_agr$mid <- prev_by_agr$lo+(prev_by_agr$up - prev_by_agr$lo)/2
+tm_ <- prev_by_agr$male %>% barplot
+prev_by_agr$female %>% barplot(add=T, col=AddAlpha(2))
+Kaxis(1, at=tm_[, 1], labels=prev_by_agr$agr)
+title(ylab="Prevalence")
+legend("topleft", col=1:2, legend=c('male', 'female'), lwd=2)
+```
+
+## Model state-space
+
+```{r}
+fp$ss$hivn.idx   <- 1
+fp$ss$hivp.idx   <- 2
+fp$ss$NG         <- 2
+fp$ss$pDS        <- 2 # 1 health 2 obese
+fp$ss$PROJ_YEARS <- fp$SIM_YEARS
+fp$eppmod        <- 1
+fp$rvec          <- 1:fp$ss$PROJ_YEARS
+```
+
+# Births
+
+```{r}
+fp$popadjust     <- 1
+fp$entrantpop    <- fp$targetpop[1,,]
+fp$entrantprev   <- rep(c(1e-5, 2e-5), fp$ss$PROJ_YEARS) %>% matrix(2)
+```
+
+## Run and test population projection
+
+```{r}
+mod <- qoop(fp)
+```
+
+```{r echo=FALSE, fig.cap = "Check pop projection"}
+par(mar=c(5,6,1,1))
+fp$targetpop %>% colSums(1, dims=2) %>% `/`(1e+07) %>% 
+  lineplot(1972:2016, ., ylab="Population size")
+mod$data %>% colSums(1, dims=3) %>% `/`(1e+07) %>%  lines(1972:2016, ., col=2, lty=3)
+legend("topleft", col=1:2, lwd=2, legend=c("actual population",
+                                            "model simulation"))
+```
